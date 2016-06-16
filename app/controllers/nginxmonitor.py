@@ -9,6 +9,7 @@ import json
 import time
 import hashlib
 import datetime
+import memcache
 import xml.etree.ElementTree as ET
 from app.helpers import bus
 
@@ -30,6 +31,7 @@ class Monitor():
             return i.echostr
 
     def POST(self):
+        MEMCACHE_HOST_TEST = "127.0.0.1:11211"
         str_xml = web.data()
         xml = ET.fromstring(str_xml)
         
@@ -38,6 +40,8 @@ class Monitor():
         msgType = xml.find("MsgType").text
         fromUser= xml.find("FromUserName").text
         toUser  = xml.find("ToUserName").text
+
+        mc = memcache.Client([MEMCACHE_HOST_TEST],debug=0)
         
         result = ""
         print re.findall("运通|\d+",keyWord),keyWord
@@ -45,31 +49,48 @@ class Monitor():
         if keyWord.strip()=="":
             result = "小主~聊点什么吧~"
 
-        elif re.findall("s \d+",keyWord):
-            busId  = int(keyWord[2:])
-            stationList = bus.requestStations(busId)
+        elif re.findall("clear",keyWord.strip(),re.IGNORECASE):
+            result = "清除完毕,可开始新的查询~"
+            mc.set(fromUser,"done")
 
-            result = []
-            for station in stationList:
-                result.append(str(station["index"])+": "+station["station_name"])
-            result.append("查看实时公交信息请输入:r+空格+车次ID号+站点ID号\n如r 863 3")
-            result = "\n".join(result)
+        elif re.findall("运通|^\d+",keyWord):
+            if (not mc.get(fromUser)) or (mc.get(fromUser) == "done"):
+                busId  = bus.requestRouteId(keyWord)
+                busList = bus.requestStationInfo(busId)
+                retDict = json.loads(busList)
+                routeIdList = []
+                for routeId in retDict:
+                    result += "车次ID（{0}）: {1}\n".format(routeId,retDict[routeId])
+                    routeIdList.append(str(routeId))
+                result += "请输入待查询车次ID号以查看具体的站点信息\n如：863\n【结束此次查询请输入clear】"
+                mc.set(fromUser,"getBusList,{0}".format(",".join(routeIdList)))
 
-        elif re.findall("r \d+ \d+",keyWord):
-            allInfo = re.findall("r \d+ \d+",keyWord)
-            routeId = int(allInfo[0].split()[1])
-            stationId = int(allInfo[0].split()[2])
-            
-            result  = bus.requestBusInfo(routeId,stationId)
+            elif re.findall("getBusList",mc.get(fromUser)):
+                busId  = int(keyWord)
+                busIdList = mc.get(fromUser).split(",")[1:]
+                print busIdList
+                if keyWord not in busIdList:
+                    result = "抱歉，输入车次ID不符合上次查询结果！请确认！\n【结束此次查询请输入clear】"
+                    return render.reply_text(fromUser,toUser,int(time.time()),result)
+                stationList = bus.requestStations(busId)
+                result = []
+                stationIdList = []
+                for station in stationList:
+                    result.append(str(station["index"])+": "+station["station_name"])
+                    stationIdList.append(str(station["index"]))
+                result.append("请输入待查询站点ID号以查看实时公交信息\n如：3\n【结束此次查询请输入clear】")
+                result = "\n".join(result)
+                mc.set(fromUser,"getRealBus,{0},{1}".format(busId,",".join(stationIdList)))
 
-        elif re.findall("运通|\d+",keyWord):
-            busId  = bus.requestRouteId(keyWord)
-            busList = bus.requestStationInfo(busId)
-            print "################nginxmonitor##################",busList
-            retDict = json.loads(busList)
-            for routeId in retDict:
-                result += "车次ID（{0}）: {1}\n".format(routeId,retDict[routeId])
-            result += "查看具体的站点信息请输入:s+空格+车次ID号\n如s 863"
+            elif re.findall("getRealBus",mc.get(fromUser)):
+                routeId = int(mc.get(fromUser).split(",")[1])
+                stationIdList = mc.get(fromUser).split(",")[2:]
+                if keyWord not in stationIdList:
+                    result = "抱歉，输入站点ID不符合上次查询结果！请确认！\n【结束此次查询请输入clear】"
+                    return render.reply_text(fromUser,toUser,int(time.time()),result)
+                stationId = int(keyWord)
+                result  = bus.requestBusInfo(routeId,stationId)
+                mc.set(fromUser,"done")
 
         else:
             result = "亲~我暂时还不能理解你的话哟"
