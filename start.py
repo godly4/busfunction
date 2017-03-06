@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 # 工程启动主文件
-# Create: 20160504
 # Author: dlgao
 
 import os

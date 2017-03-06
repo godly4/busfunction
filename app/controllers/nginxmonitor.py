@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # coding: utf-8
-# 电商Nginx日志分析
 
 import re
 import os

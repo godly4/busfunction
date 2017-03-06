@@ -4,11 +4,9 @@
 import os
 import time
 import json
-import uuid
 import xmltodict
-import urllib
-import urllib2
 import hashlib
+import requests
 import subprocess
 from collections import OrderedDict
 from datetime import datetime
@@ -18,20 +16,11 @@ E_BUS_STATION = "http://apprealtimebus.bjbus.com/app/app/getStationInfosByRouteI
 E_BUS_ROUTE = "http://apprealtimebus.bjbus.com/app/app/getRouteAndStationInfosByKeywords"
 E_BUS_INFO  = "http://apprealtimebus.bjbus.com/app/app/getBusStatusInfosByRouteId"
 
-common_header = {
-        'User-Agent': 'Dalvik/2.1.0 (Linux; U; Android 5.0.2; MI 2SC MIUI/6.3.24)',
-        'Host': 'apprealtimebus.bjbus.com',
-        'Connection': 'Keep-Alive',
-        'Accept-Encoding': 'gzip',
-        'Content-Type': 'application/x-www-form-urlencoded',
-}
-
 def getBusMD5(params):
     origin = ""
     for key in params:
         origin += key+"="+str(params[key])
     origin += "client_credentialsf8:a4:5f:11:21:79"
-    print origin
     return hashlib.md5(origin).hexdigest()
      
 def generateMD5(key,msg):
@@ -64,28 +53,12 @@ def requestRouteId(keyWord):
         ('timestamp',"2016-03-31 15:39:00"),
     ])
     sign = getBusMD5(params)
-    print params,sign
     params = dict(params,**{"sign":sign})
 
-    params = urllib.urlencode(params)
-    req    = urllib2.Request(E_BUS_ROUTE,params,common_header)
-    response = urllib2.urlopen(req)
+    r = requests.post(E_BUS_ROUTE,params)
+    result = json.loads(r.text)
 
-    uuidNum = str(uuid.uuid1())
-    fileGz = "tmpfile{0}.gz".format(uuidNum)
-    if response.info()["Content-Encoding"]=="gzip":
-        resHtml = open(fileGz,"w")
-        resHtml.write(response.read())
-        resHtml.close()
-        cmd = "gunzip -d "+fileGz
-        subprocess.call(cmd,shell=True)
-
-    id = ""
-    with open("tmpfile{0}".format(uuidNum),"r") as fileHandler:
-        result = json.loads(fileHandler.readline())
-        if result and isinstance(result,dict) and "data" in result and result["data"]["datas"]["route_infos"]:
-            id = result["data"]["datas"]["route_infos"][0]["route_id"]
-    clear(["tmpfile{0}".format(uuidNum),"tmpfile{0}.gz".format(uuidNum)])
+    id = result["data"]["datas"]["route_infos"][0]["route_id"]
     return id
 
 def requestStations(id):
@@ -93,32 +66,16 @@ def requestStations(id):
         return "暂不支持此公交"
     params = OrderedDict([
         ('device_id','f8:a4:5f:11:21:79'),
-        ('index',1),
         ('is_change',0),
         ('route_id',id),
         ('timestamp',"2016-03-31 15:39:02"),
-        ('type',0),
     ])
 
     sign = getBusMD5(params)
     params = dict(params,**{"sign":sign})
 
-    params = urllib.urlencode(params)
-    req    = urllib2.Request(E_BUS_STATION,params,common_header)
-    response = urllib2.urlopen(req)
-
-    uuidNum = str(uuid.uuid1())
-    fileGz = "tmpfile{0}.gz".format(uuidNum)
-    if response.info()["Content-Encoding"]=="gzip":
-        resHtml = open(fileGz,"w")
-        resHtml.write(response.read())
-        resHtml.close()
-        cmd = "gunzip -d "+fileGz
-        subprocess.call(cmd,shell=True)
-
-    with open("tmpfile{0}".format(uuidNum),"r") as fileHandler:
-        result = json.loads(fileHandler.read())
-    clear(["tmpfile{0}".format(uuidNum),"tmpfile{0}.gz".format(uuidNum)])
+    r = requests.post(E_BUS_STATION,params)
+    result = json.loads(r.text)
 
     return result["data"]["station_infos"]["datas"]
 
@@ -130,47 +87,28 @@ def requestStationInfo(id):
     params  = []
     params.append(OrderedDict([
         ('device_id','f8:a4:5f:11:21:79'),
-        ('index',1),
         ('is_change',0),
         ('route_id',id),
         ('timestamp',"2016-03-31 15:39:02"),
-        ('type',0),
     ]))
     params.append(OrderedDict([
         ('device_id','f8:a4:5f:11:21:79'),
-        ('index',1),
         ('is_change',1),
         ('route_id',id),
         ('timestamp',"2016-03-31 15:39:02"),
-        ('type',0),
     ]))
     for param in params:
         sign = getBusMD5(param)
         param = dict(param,**{"sign":sign})
 
-        param = urllib.urlencode(param)
-        req    = urllib2.Request(E_BUS_STATION,param,common_header)
-        response = urllib2.urlopen(req)
-
-        uuidNum = str(uuid.uuid1())
-        fileGz = "tmpfile{0}.gz".format(uuidNum)
-        if response.info()["Content-Encoding"]=="gzip":
-            resHtml = open(fileGz,"w")
-            resHtml.write(response.read())
-            resHtml.close()
-            cmd = "gunzip -d "+fileGz
-            subprocess.call(cmd,shell=True)
-
-        with open("tmpfile{0}".format(uuidNum),"r") as fileHandler:
-            result = json.loads(fileHandler.read())
-        clear(["tmpfile{0}".format(uuidNum),"tmpfile{0}.gz".format(uuidNum)])
+        r = requests.post(E_BUS_STATION,param)
+        result = json.loads(r.text)
 
         routeID = result["data"]["route_detail"]["id"]
         start   = result["data"]["route_detail"]["start_station"]
         end     = result["data"]["route_detail"]["end_station"]
         retDict[routeID] = start+" 至 "+end
 
-    print "$$$$$$$$$$$$$$$$$bus$$$$$$$$$$$$$$$$",retDict
     return json.dumps(retDict)
 
 def requestBusInfo(busId,stationId):
@@ -186,23 +124,9 @@ def requestBusInfo(busId,stationId):
     sign = getBusMD5(params)
     params = dict(params,**{"sign":sign})
 
-    params = urllib.urlencode(params)
-    req    = urllib2.Request(E_BUS_INFO,params,common_header)
-    response = urllib2.urlopen(req)
+    r = requests.post(E_BUS_INFO,params)
+    result = json.loads(r.text)
 
-    uuidNum = str(uuid.uuid1())
-    fileGz = "tmpfile{0}.gz".format(uuidNum)
-    if response.info()["Content-Encoding"]=="gzip":
-        resHtml = open(fileGz,"w")
-        resHtml.write(response.read())
-        resHtml.close()
-        time.sleep(4.2)
-        cmd = "gunzip -d "+fileGz
-        subprocess.call(cmd,shell=True)
-
-    with open("tmpfile{0}".format(uuidNum),"r") as fileHandler:
-        result = json.loads(fileHandler.read())
-    clear(["tmpfile{0}".format(uuidNum),"tmpfile{0}.gz".format(uuidNum)])
     retList = result["data"]["datas"]["bus_list_before"]
     if not isinstance(retList,list):
         return "抱歉，该车次暂无实时信息"
@@ -221,9 +145,17 @@ def requestBusInfo(busId,stationId):
     return retStr
 
 if __name__=="__main__":
-    #lineName = raw_input("请输入名称:")
+    lineName = raw_input("请输入名称:")
     #getLineId(lineName)
     #sendMsg(2,"6pf7t1zr","Hello")
-    RouteId = requestRouteId()
-    #requestStations(RouteId)
-    requestBusInfo(RouteId)
+    RouteId = requestRouteId(lineName)
+    print RouteId
+    #params = OrderedDict([
+    #    ("device_id","45D2C3E2D9DA44148422FEFBA5111443"),
+    #    ("is_change",0),
+    #    ("route_id",756),
+    #    ("timestamp","2017-03-06 20:57:39"),
+    #])
+    #print getBusMD5(params)
+    requestStations(RouteId)
+    print requestBusInfo(RouteId,2)
