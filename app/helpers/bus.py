@@ -22,23 +22,6 @@ def getBusMD5(params):
         origin += key+"="+str(params[key])
     origin += "client_credentialsf8:a4:5f:11:21:79"
     return hashlib.md5(origin).hexdigest()
-     
-def generateMD5(key,msg):
-    m_key = hashlib.md5()
-    m_key.update(key+msg)
-    return m_key.hexdigest()
-
-def sendMsg(id,key,msg):
-    url = "https://ops.ms.netease.com/sendtask"
-    key_md5 = generateMD5(key,msg)
-    postData = {
-        "id":id,
-        "msg":msg,
-        "key_md5":key_md5
-    }
-    postData = urllib.urlencode(postData)
-    req = urllib2.Request(url,postData)
-    r = urllib2.urlopen(req)
 
 def clear(paths):
     for path in paths:
